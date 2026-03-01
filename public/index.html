@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Second Brain RAG</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>🧠 Second Brain RAG</h1>
+      <p>Ask questions about your indexed documents</p>
+    </header>
+
+    <div class="tabs">
+      <button class="tab-btn active" onclick="showTab('search')">🔍 Search</button>
+      <button class="tab-btn" onclick="showTab('chat')">💬 Chat (RAG)</button>
+    </div>
+
+    <!-- Search Tab -->
+    <div id="search-tab" class="tab-content active">
+      <div class="input-group">
+        <input type="text" id="search-input" placeholder="Search documents..." >
+        <button onclick="performSearch()">Search</button>
+      </div>
+      <div id="search-results"></div>
+    </div>
+
+    <!-- Chat Tab -->
+    <div id="chat-tab" class="tab-content">
+      <div id="chat-messages"></div>
+      <div class="input-group">
+        <input type="text" id="chat-input" placeholder="Ask a question..." >
+        <button onclick="sendMessage()">Send</button>
+      </div>
+    </div>
+
+    <div id="loading" class="loading hidden">Loading...</div>
+  </div>
+
+  <script src="/app.js"></script>
+</body>
+</html>

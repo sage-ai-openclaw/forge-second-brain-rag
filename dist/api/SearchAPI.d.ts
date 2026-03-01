@@ -41,6 +41,18 @@ export declare class SearchAPI {
      */
     private handleRequest;
     /**
+     * Serve static files from the public directory
+     */
+    private serveStaticFile;
+    /**
+     * Send a file as response
+     */
+    private sendFile;
+    /**
+     * Get content type based on file extension
+     */
+    private getContentType;
+    /**
      * Handle POST /api/search
      */
     private handleSearch;

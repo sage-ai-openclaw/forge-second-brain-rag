@@ -3,6 +3,8 @@ import { RAGService, RAGQueryRequest, RAGQueryResult } from '../rag/RAGService';
 import { initializeDatabase, closeDatabase } from '../db/database';
 import http from 'http';
 import url from 'url';
+import fs from 'fs';
+import path from 'path';
 
 export interface SearchRequest {
   query: string;
@@ -60,6 +62,10 @@ export class SearchAPI {
     return new Promise((resolve, reject) => {
       this.server!.listen(this.port, () => {
         console.log(`🚀 Search API server running on http://localhost:${this.port}`);
+        console.log(`🌐 Web UI: http://localhost:${this.port}`);
+        console.log(`📡 API endpoints:`);
+        console.log(`   POST http://localhost:${this.port}/api/search`);
+        console.log(`   POST http://localhost:${this.port}/api/ask`);
         resolve();
       });
 
@@ -89,7 +95,7 @@ export class SearchAPI {
    */
   private async handleRequest(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
     const parsedUrl = url.parse(req.url || '', true);
-    const path = parsedUrl.pathname;
+    const pathname = parsedUrl.pathname;
     const method = req.method;
 
     // Set CORS headers
@@ -104,25 +110,113 @@ export class SearchAPI {
     }
 
     // Health check endpoint
-    if (path === '/health' && method === 'GET') {
+    if (pathname === '/health' && method === 'GET') {
       this.sendJSON(res, 200, { status: 'ok' });
       return;
     }
 
     // Search endpoint
-    if (path === '/api/search' && method === 'POST') {
+    if (pathname === '/api/search' && method === 'POST') {
       await this.handleSearch(req, res);
       return;
     }
 
     // RAG Ask endpoint
-    if (path === '/api/ask' && method === 'POST') {
+    if (pathname === '/api/ask' && method === 'POST') {
       await this.handleAsk(req, res);
+      return;
+    }
+
+    // Static files
+    if (method === 'GET') {
+      await this.serveStaticFile(req, res, pathname || '/');
       return;
     }
 
     // 404 for unknown endpoints
     this.sendJSON(res, 404, { error: 'Not found' });
+  }
+
+  /**
+   * Serve static files from the public directory
+   */
+  private async serveStaticFile(
+    req: http.IncomingMessage,
+    res: http.ServerResponse,
+    pathname: string
+  ): Promise<void> {
+    // Default to index.html for root path
+    let filePath = pathname === '/' ? '/index.html' : pathname;
+    
+    // Prevent directory traversal attacks
+    if (filePath.includes('..')) {
+      this.sendJSON(res, 403, { error: 'Forbidden' });
+      return;
+    }
+
+    // Resolve the full path
+    const publicDir = path.join(__dirname, '..', '..', '..', 'public');
+    const fullPath = path.join(publicDir, filePath);
+
+    // Check if file exists
+    try {
+      const stats = await fs.promises.stat(fullPath);
+      if (!stats.isFile()) {
+        // Try serving index.html for SPA routing
+        const indexPath = path.join(publicDir, 'index.html');
+        await this.sendFile(res, indexPath, 'text/html');
+        return;
+      }
+
+      // Determine content type
+      const ext = path.extname(fullPath).toLowerCase();
+      const contentType = this.getContentType(ext);
+
+      await this.sendFile(res, fullPath, contentType);
+    } catch (error) {
+      // File not found - serve index.html for SPA
+      try {
+        const indexPath = path.join(publicDir, 'index.html');
+        await this.sendFile(res, indexPath, 'text/html');
+      } catch {
+        this.sendJSON(res, 404, { error: 'Not found' });
+      }
+    }
+  }
+
+  /**
+   * Send a file as response
+   */
+  private async sendFile(
+    res: http.ServerResponse,
+    filePath: string,
+    contentType: string
+  ): Promise<void> {
+    const content = await fs.promises.readFile(filePath);
+    res.writeHead(200, { 
+      'Content-Type': contentType,
+      'Cache-Control': 'public, max-age=3600'
+    });
+    res.end(content);
+  }
+
+  /**
+   * Get content type based on file extension
+   */
+  private getContentType(ext: string): string {
+    const types: Record<string, string> = {
+      '.html': 'text/html',
+      '.css': 'text/css',
+      '.js': 'application/javascript',
+      '.json': 'application/json',
+      '.png': 'image/png',
+      '.jpg': 'image/jpeg',
+      '.jpeg': 'image/jpeg',
+      '.gif': 'image/gif',
+      '.svg': 'image/svg+xml',
+      '.ico': 'image/x-icon',
+    };
+    return types[ext] || 'application/octet-stream';
   }
 
   /**

@@ -243,6 +243,7 @@ program
         const port = parseInt(options.port, 10) || 3456;
         const api = new SearchAPI(undefined, port);
         await api.start();
+        console.log(`\n🌐 Web UI: http://localhost:${port}`);
         console.log(`\n📡 API endpoints:`);
         console.log(`   GET  http://localhost:${port}/health`);
         console.log(`   POST http://localhost:${port}/api/search`);
