@@ -5,15 +5,18 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.SearchAPI = void 0;
 const SearchService_1 = require("../search/SearchService");
+const RAGService_1 = require("../rag/RAGService");
 const database_1 = require("../db/database");
 const http_1 = __importDefault(require("http"));
 const url_1 = __importDefault(require("url"));
 class SearchAPI {
     searchService;
+    ragService;
     port;
     server = null;
     constructor(searchService, port = 3456) {
         this.searchService = searchService || new SearchService_1.SearchService();
+        this.ragService = new RAGService_1.RAGService(this.searchService);
         this.port = port;
     }
     /**
@@ -74,6 +77,11 @@ class SearchAPI {
             await this.handleSearch(req, res);
             return;
         }
+        // RAG Ask endpoint
+        if (path === '/api/ask' && method === 'POST') {
+            await this.handleAsk(req, res);
+            return;
+        }
         // 404 for unknown endpoints
         this.sendJSON(res, 404, { error: 'Not found' });
     }
@@ -102,6 +110,43 @@ class SearchAPI {
         }
         catch (error) {
             console.error('Search error:', error);
+            const message = error instanceof Error ? error.message : 'Internal server error';
+            this.sendJSON(res, 500, { error: message });
+        }
+    }
+    /**
+     * Handle POST /api/ask
+     */
+    async handleAsk(req, res) {
+        try {
+            const body = await this.parseBody(req);
+            const askRequest = JSON.parse(body);
+            // Validate request
+            if (!askRequest.query || typeof askRequest.query !== 'string') {
+                this.sendJSON(res, 400, { error: 'Query is required and must be a string' });
+                return;
+            }
+            const topK = askRequest.topK && askRequest.topK > 0
+                ? Math.min(askRequest.topK, 20) // Max 20 results for RAG
+                : 5;
+            const temperature = askRequest.temperature !== undefined
+                ? Math.max(0, Math.min(1, askRequest.temperature))
+                : 0.7;
+            const result = await this.ragService.ask({
+                query: askRequest.query,
+                topK,
+                model: askRequest.model,
+                temperature,
+                systemPrompt: askRequest.systemPrompt,
+            });
+            const response = {
+                ...result,
+                success: true,
+            };
+            this.sendJSON(res, 200, response);
+        }
+        catch (error) {
+            console.error('RAG ask error:', error);
             const message = error instanceof Error ? error.message : 'Internal server error';
             this.sendJSON(res, 500, { error: message });
         }

@@ -38,6 +38,7 @@ const commander_1 = require("commander");
 const DocumentIndexer_1 = require("../indexer/DocumentIndexer");
 const EmbeddingIndexer_1 = require("../embeddings/EmbeddingIndexer");
 const SearchService_1 = require("../search/SearchService");
+const RAGService_1 = require("../rag/RAGService");
 const database_1 = require("../db/database");
 const program = new commander_1.Command();
 program
@@ -176,6 +177,63 @@ program
     }
 });
 program
+    .command('ask')
+    .description('Haz una pregunta y obtén una respuesta basada en tus documentos (RAG)')
+    .argument('<question>', 'Pregunta a responder')
+    .option('-k, --top-k <number>', 'Número de documentos a usar como contexto (default: 5)', '5')
+    .option('-m, --model <model>', 'Modelo de Ollama a usar (default: llama3.2)', 'llama3.2')
+    .option('-t, --temperature <number>', 'Temperatura para generación (0.0-1.0, default: 0.7)', '0.7')
+    .action(async (question, options) => {
+    try {
+        await (0, database_1.initializeDatabase)();
+        const topK = parseInt(options.topK, 10) || 5;
+        const temperature = parseFloat(options.temperature) || 0.7;
+        console.log(`🤔 Pregunta: "${question}"`);
+        console.log(`   Modelo: ${options.model}`);
+        console.log(`   Contexto: Top ${topK} documentos\n`);
+        // Check Ollama health
+        const ragService = new RAGService_1.RAGService(undefined, undefined, options.model, temperature);
+        const health = await ragService.healthCheck();
+        if (!health.ok) {
+            console.error(`❌ Ollama no disponible: ${health.error}`);
+            console.log('💡 Asegúrate de que Ollama esté corriendo en truenas-scale:30068');
+            await (0, database_1.closeDatabase)();
+            process.exit(1);
+        }
+        console.log('🔍 Buscando documentos relevantes...');
+        const startTime = Date.now();
+        const result = await ragService.ask({
+            query: question,
+            topK,
+            model: options.model,
+            temperature,
+        });
+        console.log(`\n${'='.repeat(60)}`);
+        console.log('💬 RESPUESTA:');
+        console.log(`${'='.repeat(60)}`);
+        console.log(result.answer);
+        console.log(`${'='.repeat(60)}\n`);
+        // Show sources
+        if (result.sources.length > 0) {
+            console.log('📚 Fuentes utilizadas:');
+            result.sources.forEach((source, index) => {
+                const score = (source.relevanceScore * 100).toFixed(1);
+                console.log(`   ${index + 1}. ${source.documentFilename} (Score: ${score}%)`);
+            });
+        }
+        // Show stats
+        console.log(`\n⏱️  Tiempo de respuesta: ${result.responseTime}ms`);
+        if (result.tokensUsed && result.tokensUsed.total > 0) {
+            console.log(`📝 Tokens: ${result.tokensUsed.prompt} prompt + ${result.tokensUsed.completion} completion = ${result.tokensUsed.total} total`);
+        }
+        await (0, database_1.closeDatabase)();
+    }
+    catch (err) {
+        console.error('❌ Error:', err);
+        process.exit(1);
+    }
+});
+program
     .command('api')
     .description('Inicia el servidor API de búsqueda')
     .option('-p, --port <number>', 'Puerto (default: 3456)', '3456')
@@ -188,6 +246,7 @@ program
         console.log(`\n📡 API endpoints:`);
         console.log(`   GET  http://localhost:${port}/health`);
         console.log(`   POST http://localhost:${port}/api/search`);
+        console.log(`   POST http://localhost:${port}/api/ask`);
         console.log(`\nPress Ctrl+C to stop`);
         // Keep the process running
         process.on('SIGINT', async () => {

@@ -1,4 +1,5 @@
 import { SearchService, SearchResult } from '../search/SearchService';
+import { RAGQueryResult } from '../rag/RAGService';
 export interface SearchRequest {
     query: string;
     topK?: number;
@@ -8,11 +9,22 @@ export interface SearchResponse {
     query: string;
     totalResults: number;
 }
+export interface RAGRequest {
+    query: string;
+    topK?: number;
+    model?: string;
+    temperature?: number;
+    systemPrompt?: string;
+}
+export interface RAGResponse extends RAGQueryResult {
+    success: boolean;
+}
 export interface ErrorResponse {
     error: string;
 }
 export declare class SearchAPI {
     private searchService;
+    private ragService;
     private port;
     private server;
     constructor(searchService?: SearchService, port?: number);
@@ -32,6 +44,10 @@ export declare class SearchAPI {
      * Handle POST /api/search
      */
     private handleSearch;
+    /**
+     * Handle POST /api/ask
+     */
+    private handleAsk;
     /**
      * Parse request body
      */

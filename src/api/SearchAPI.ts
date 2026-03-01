@@ -1,4 +1,5 @@
 import { SearchService, SearchResult } from '../search/SearchService';
+import { RAGService, RAGQueryRequest, RAGQueryResult } from '../rag/RAGService';
 import { initializeDatabase, closeDatabase } from '../db/database';
 import http from 'http';
 import url from 'url';
@@ -14,12 +15,25 @@ export interface SearchResponse {
   totalResults: number;
 }
 
+export interface RAGRequest {
+  query: string;
+  topK?: number;
+  model?: string;
+  temperature?: number;
+  systemPrompt?: string;
+}
+
+export interface RAGResponse extends RAGQueryResult {
+  success: boolean;
+}
+
 export interface ErrorResponse {
   error: string;
 }
 
 export class SearchAPI {
   private searchService: SearchService;
+  private ragService: RAGService;
   private port: number;
   private server: http.Server | null = null;
 
@@ -28,6 +42,7 @@ export class SearchAPI {
     port: number = 3456
   ) {
     this.searchService = searchService || new SearchService();
+    this.ragService = new RAGService(this.searchService);
     this.port = port;
   }
 
@@ -100,6 +115,12 @@ export class SearchAPI {
       return;
     }
 
+    // RAG Ask endpoint
+    if (path === '/api/ask' && method === 'POST') {
+      await this.handleAsk(req, res);
+      return;
+    }
+
     // 404 for unknown endpoints
     this.sendJSON(res, 404, { error: 'Not found' });
   }
@@ -133,6 +154,49 @@ export class SearchAPI {
       this.sendJSON(res, 200, response);
     } catch (error) {
       console.error('Search error:', error);
+      const message = error instanceof Error ? error.message : 'Internal server error';
+      this.sendJSON(res, 500, { error: message });
+    }
+  }
+
+  /**
+   * Handle POST /api/ask
+   */
+  private async handleAsk(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+    try {
+      const body = await this.parseBody(req);
+      const askRequest: RAGRequest = JSON.parse(body);
+
+      // Validate request
+      if (!askRequest.query || typeof askRequest.query !== 'string') {
+        this.sendJSON(res, 400, { error: 'Query is required and must be a string' });
+        return;
+      }
+
+      const topK = askRequest.topK && askRequest.topK > 0
+        ? Math.min(askRequest.topK, 20) // Max 20 results for RAG
+        : 5;
+
+      const temperature = askRequest.temperature !== undefined
+        ? Math.max(0, Math.min(1, askRequest.temperature))
+        : 0.7;
+
+      const result = await this.ragService.ask({
+        query: askRequest.query,
+        topK,
+        model: askRequest.model,
+        temperature,
+        systemPrompt: askRequest.systemPrompt,
+      });
+
+      const response: RAGResponse = {
+        ...result,
+        success: true,
+      };
+
+      this.sendJSON(res, 200, response);
+    } catch (error) {
+      console.error('RAG ask error:', error);
       const message = error instanceof Error ? error.message : 'Internal server error';
       this.sendJSON(res, 500, { error: message });
     }
