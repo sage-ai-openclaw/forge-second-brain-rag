@@ -3,6 +3,7 @@
 import { Command } from 'commander';
 import { DocumentIndexer } from '../indexer/DocumentIndexer';
 import { EmbeddingIndexer } from '../embeddings/EmbeddingIndexer';
+import { SearchService } from '../search/SearchService';
 import { initializeDatabase, closeDatabase } from '../db/database';
 
 const program = new Command();
@@ -116,6 +117,78 @@ program
       console.log(`   Modelo: qwen3-embedding:8b`);
 
       await closeDatabase();
+    } catch (err) {
+      console.error('❌ Error:', err);
+      process.exit(1);
+    }
+  });
+
+program
+  .command('search')
+  .description('Busca documentos similares a tu consulta')
+  .argument('<query>', 'Consulta de búsqueda')
+  .option('-k, --top-k <number>', 'Número de resultados (default: 5)', '5')
+  .action(async (query, options) => {
+    try {
+      await initializeDatabase();
+
+      const topK = parseInt(options.topK, 10) || 5;
+      
+      console.log(`🔍 Buscando: "${query}"`);
+      console.log(`   Top K: ${topK}\n`);
+
+      const searchService = new SearchService();
+      const startTime = Date.now();
+      const results = await searchService.search(query, topK);
+      const duration = Date.now() - startTime;
+
+      if (results.length === 0) {
+        console.log('❌ No se encontraron resultados.');
+        console.log('💡 Asegúrate de haber indexado documentos y generado embeddings.');
+        await closeDatabase();
+        return;
+      }
+
+      console.log(`✅ ${results.length} resultados encontrados (${duration}ms):\n`);
+
+      results.forEach((result, index) => {
+        const score = (result.relevanceScore * 100).toFixed(1);
+        console.log(`${index + 1}. 📄 ${result.documentFilename} (Score: ${score}%)`);
+        console.log(`   📂 ${result.documentPath}`);
+        console.log(`   📝 ${result.content.substring(0, 200)}${result.content.length > 200 ? '...' : ''}`);
+        console.log();
+      });
+
+      await closeDatabase();
+    } catch (err) {
+      console.error('❌ Error:', err);
+      process.exit(1);
+    }
+  });
+
+program
+  .command('api')
+  .description('Inicia el servidor API de búsqueda')
+  .option('-p, --port <number>', 'Puerto (default: 3456)', '3456')
+  .action(async (options) => {
+    try {
+      const { SearchAPI } = await import('../api/SearchAPI');
+      const port = parseInt(options.port, 10) || 3456;
+      
+      const api = new SearchAPI(undefined, port);
+      await api.start();
+
+      console.log(`\n📡 API endpoints:`);
+      console.log(`   GET  http://localhost:${port}/health`);
+      console.log(`   POST http://localhost:${port}/api/search`);
+      console.log(`\nPress Ctrl+C to stop`);
+
+      // Keep the process running
+      process.on('SIGINT', async () => {
+        console.log('\n\n👋 Shutting down...');
+        await api.stop();
+        process.exit(0);
+      });
     } catch (err) {
       console.error('❌ Error:', err);
       process.exit(1);

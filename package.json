@@ -10,6 +10,7 @@
     "dev": "tsx src/cli/index.ts",
     "build": "tsc",
     "start": "node dist/cli/index.js",
+    "api": "npm start -- api",
     "test": "vitest run",
     "index": "npm start -- index"
   },
